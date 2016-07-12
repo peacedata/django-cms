@@ -36,7 +36,7 @@ casper.test.tearDown(function (done) {
         .run(done);
 });
 
-casper.test.begin('Copy plugin from the structure board', function (test) {
+casper.test.begin('Copy/paste plugin from the structure board with dnd', function (test) {
     var contentNumber;
 
     casper
@@ -54,7 +54,7 @@ casper.test.begin('Copy plugin from the structure board', function (test) {
         })
         // check that there is something now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 0, 'No plugins in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 0, 'No plugins in clipboard');
         })
         // select copy button from dropdown list
         .waitUntilVisible(
@@ -67,7 +67,7 @@ casper.test.begin('Copy plugin from the structure board', function (test) {
 
         // check that there is something now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 1, '1 plugin in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 1, '1 plugin in clipboard');
         })
 
         .waitForSelector('.cms-toolbar-expanded')
@@ -140,8 +140,86 @@ casper.test.begin('Copy plugin from the structure board', function (test) {
         })
         // check that there is nothing now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 0, 'Clipboard is now empty');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 0, 'Clipboard is now empty');
         })
+
+        .run(function () {
+            test.done();
+        });
+});
+
+casper.test.begin('Copy/paste plugin from the structure board with paste button into a plugin', function (test) {
+    var contentNumber;
+
+    casper
+        .start()
+        .then(cms.addPlugin({
+            type: 'Bootstrap3BlockquoteCMSPlugin'
+        }))
+        .thenOpen(globals.editUrl)
+        // go to the Structure mode
+        .then(cms.switchTo('structure'))
+        // click settings for last content plugin
+        .waitUntilVisible('.cms-structure', function () {
+            // save initial number of content plugins
+            contentNumber = this.evaluate(function () {
+                return document.querySelectorAll('.cms-structure-content .cms-draggable').length;
+            });
+            // click settings for first content plugin
+            this.click('.cms-structure .cms-draggable .cms-submenu-settings');
+        })
+        // check that there is something now in the clipboard
+        .then(function () {
+            test.assertElementCount('.cms-clipboard .cms-draggable', 0, 'No plugins in clipboard');
+        })
+        // select copy button from dropdown list
+        .waitUntilVisible(
+            '.cms-structure .cms-draggable .cms-submenu-item a[data-rel="copy"]',
+            function () {
+                this.click('.cms-structure .cms-draggable .cms-submenu-item a[data-rel="copy"]');
+            }
+        )
+        .waitForResource(/copy-plugins/)
+
+        // check that there is something now in the clipboard
+        .then(function () {
+            test.assertElementCount('.cms-clipboard .cms-draggable', 1, '1 plugin in clipboard');
+        })
+
+        .waitForSelector('.cms-toolbar-expanded')
+
+        .then(function () {
+            this.click('.cms-structure .cms-draggable:last-child .cms-submenu-settings');
+        })
+        // choose paste option inside dropdown menu
+        .waitUntilVisible('.cms-submenu-dropdown', function () {
+            this.click('.cms-structure .cms-draggable:last-child .cms-submenu-dropdown ' +
+                       '.cms-submenu-item a[data-rel="paste"]');
+        })
+        .then(function () {
+            test.assertElementCount(
+                '.cms-structure .cms-draggables .cms-draggable',
+                contentNumber + 1,
+                'Paste after cutting plugin successful'
+            );
+        })
+
+        // wait till the paste actually succeeds
+        .waitForResource(/move\-plugin/)
+        .wait(1000)
+        .reload()
+        .waitUntilVisible('.cms-structure')
+
+        // check that number of content plugins has been indeed increased
+        .then(function () {
+            test.assertElementCount(
+                '.cms-structure .cms-draggables .cms-draggable',
+                contentNumber + 1,
+                'Paste after cutting plugin successful'
+            );
+        })
+
+        .then(cms.clearClipboard())
 
         .run(function () {
             test.done();
@@ -159,7 +237,7 @@ casper.test.begin('Copy placeholder contents from the structure board', function
         })
         // check that there is nothing in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 0, 'No plugins in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 0, 'No plugins in clipboard');
         })
         .waitUntilVisible(
             '.cms-structure .cms-dragarea:nth-child(2) .cms-submenu-item a[data-rel="copy"]',
@@ -185,7 +263,7 @@ casper.test.begin('Copy placeholder contents from the structure board', function
         })
         // check that there is still nothing in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 0, 'No plugins in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 0, 'No plugins in clipboard');
         })
         // try to copy contents of empty placeholder
         .waitUntilVisible(
@@ -197,7 +275,7 @@ casper.test.begin('Copy placeholder contents from the structure board', function
         .waitForResource(/copy-plugins/)
         // check that there is something now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 1, '1 plugin in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 1, '1 plugin in clipboard');
             test.assertExists(
                 '.cms-clipboard-containers [title*="Placeholder"]',
                 '"Placeholder" plugin was copied'
@@ -245,7 +323,7 @@ casper.test.begin('Plugins with parent restriction cannot be pasted ' +
         })
         // check that there is nothing now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 0, 'No plugins in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 0, 'No plugins in clipboard');
         })
         // go to the Structure mode
         .then(cms.switchTo('structure'))
@@ -367,7 +445,7 @@ casper.test.begin('Plugins with parent restriction cannot be pasted ' +
         })
         // check that there is nothing now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 0, 'No plugins in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 0, 'No plugins in clipboard');
         })
         // go to the Structure mode
         .then(cms.switchTo('structure'))
@@ -506,7 +584,7 @@ casper.test.begin('Plugins with child restriction cannot accept other children (
         })
         // check that there is nothing now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 0, 'No plugins in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 0, 'No plugins in clipboard');
         })
         // go to the Structure mode
         .then(cms.switchTo('structure'))
@@ -530,7 +608,7 @@ casper.test.begin('Plugins with child restriction cannot accept other children (
         .waitForSelector('.cms-toolbar-expanded')
         // check that there is something now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 1, '1 plugin in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 1, '1 plugin in clipboard');
             test.assertExists(
                 '.cms-clipboard-containers [title*="TextPlugin"]',
                 'Correct plugin was copied'
@@ -633,7 +711,7 @@ casper.test.begin('Plugins with child restriction cannot accept other children (
         })
         // check that there is nothing now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 0, 'No plugins in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 0, 'No plugins in clipboard');
         })
         // go to the Structure mode
         .then(cms.switchTo('structure'))
@@ -657,7 +735,7 @@ casper.test.begin('Plugins with child restriction cannot accept other children (
         .waitForSelector('.cms-toolbar-expanded')
         // check that there is something now in the clipboard
         .then(function () {
-            test.assertElementCount('.cms-clipboard .cms-plugin', 1, '1 plugin in clipboard');
+            test.assertElementCount('.cms-clipboard .cms-draggable', 1, '1 plugin in clipboard');
             test.assertExists(
                 '.cms-clipboard-containers [title*="TextPlugin"]',
                 'Correct plugin was copied'

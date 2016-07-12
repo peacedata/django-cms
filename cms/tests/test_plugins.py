@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import base64
 import datetime
 import json
+import pickle
 import os
 
 from cms.api import create_page
@@ -218,6 +219,42 @@ class PluginsTestCase(PluginsTestBaseCase):
                 OriginalFormClass.base_fields['sections'].widget.widget,
                 FilteredSelectMultiple,
             )
+
+    def test_excluded_plugin(self):
+        """
+        Test that you can't add a text plugin
+        """
+
+        CMS_PLACEHOLDER_CONF = {
+            'body': {
+                'excluded_plugins': ['TextPlugin']
+            }
+        }
+
+        # try to add a new text plugin
+        with self.settings(CMS_PLACEHOLDER_CONF=CMS_PLACEHOLDER_CONF):
+            page_data = self.get_new_page_data()
+            self.client.post(URL_CMS_PAGE_ADD, page_data)
+            page = Page.objects.all()[0]
+            installed_plugins = plugin_pool.get_all_plugins('body', page)
+            installed_plugins = [cls.__name__ for cls in installed_plugins]
+            self.assertNotIn('TextPlugin', installed_plugins)
+
+        CMS_PLACEHOLDER_CONF = {
+            'body': {
+                'plugins': ['TextPlugin'],
+                'excluded_plugins': ['TextPlugin']
+            }
+        }
+
+        # try to add a new text plugin
+        with self.settings(CMS_PLACEHOLDER_CONF=CMS_PLACEHOLDER_CONF):
+            page_data = self.get_new_page_data()
+            self.client.post(URL_CMS_PAGE_ADD, page_data)
+            page = Page.objects.all()[0]
+            installed_plugins = plugin_pool.get_all_plugins('body', page)
+            installed_plugins = [cls.__name__ for cls in installed_plugins]
+            self.assertNotIn('TextPlugin', installed_plugins)
 
     def test_plugin_edit_marks_page_dirty(self):
         page_data = self.get_new_page_data()
@@ -795,9 +832,10 @@ class PluginsTestCase(PluginsTestBaseCase):
 
         self.client.logout()
         cache.clear()
-        response = self.client.get(page.get_absolute_url())
-        self.assertTrue(
-            'https://maps-api-ssl.google.com/maps/api/js' in response.content.decode('utf8').replace("&amp;", "&"))
+        # TODO: Replace this test using a Test Plugin, not an externally managed one.
+        # response = self.client.get(page.get_absolute_url())
+        # self.assertTrue(
+        #     'https://maps-api-ssl.google.com/maps/api/js' in response.content.decode('utf8').replace("&amp;", "&"))
 
     def test_inherit_plugin_with_empty_plugin(self):
         inheritfrompage = api.create_page('page to inherit from',
@@ -960,19 +998,34 @@ class PluginsTestCase(PluginsTestBaseCase):
         # this should not raise any errors, but just ignore the empty plugin
         out = placeholder.render(self.get_context(), width=300)
         self.assertFalse(len(out))
-        self.assertTrue(len(placeholder._plugins_cache))
+        self.assertFalse(len(placeholder._plugins_cache))
 
-    def test_defer_pickel(self):
+    def test_pickle(self):
+        page = api.create_page("page", "nav_playground.html", "en")
+        placeholder = page.placeholders.get(slot='body')
+        text_plugin = api.add_plugin(
+            placeholder,
+            "TextPlugin",
+            'en',
+            body="Hello World",
+        )
+        cms_plugin = text_plugin.cmsplugin_ptr
+
+        # assert we can pickle and unpickle a solid plugin (subclass)
+        self.assertEqual(text_plugin, pickle.loads(pickle.dumps(text_plugin)))
+
+        # assert we can pickle and unpickle a cms plugin (parent)
+        self.assertEqual(cms_plugin, pickle.loads(pickle.dumps(cms_plugin)))
+
+    def test_defer_pickle(self):
         page = api.create_page("page", "nav_playground.html", "en")
 
         placeholder = page.placeholders.get(slot='body')
         api.add_plugin(placeholder, "TextPlugin", 'en', body="Hello World")
         plugins = Text.objects.all().defer('path')
-        import pickle
         import io
         a = io.BytesIO()
         pickle.dump(plugins[0], a)
-
 
     def test_empty_plugin_description(self):
         page = api.create_page("page", "nav_playground.html", "en")
@@ -1725,10 +1778,6 @@ class NoDatabasePluginTests(TestCase):
         # Plugin models have been moved away due to Django's AppConfig
         from cms.test_utils.project.bunch_of_plugins.models import TestPlugin2
         self.assertEqual(TestPlugin2._meta.db_table, 'bunch_of_plugins_testplugin2')
-
-    def test_pickle(self):
-        text = Text()
-        text.__reduce__()
 
 
 class PicturePluginTests(PluginsTestBaseCase):

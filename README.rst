@@ -75,7 +75,7 @@ http://docs.django-cms.org/en/latest/introduction/index.html
 Quick Start
 ***********
 
-You can use the `django CMS installer <http://djangocms-installer.readthedocs.org>`_::
+You can use the `django CMS installer <https://djangocms-installer.readthedocs.io>`_::
 
     $ pip install --upgrade virtualenv
     $ virtualenv env
@@ -113,5 +113,5 @@ Credits
   `django-treebeard <https://tabo.pe/projects/django-treebeard/>`_.
 * JavaScript tree in admin uses `jsTree <http://www.jstree.com>`_.
 * Many thanks to the
-  `over 515 contributors <https://github.com/divio/django-cms/blob/master/AUTHORS>`_
+  `over 515 contributors <https://github.com/divio/django-cms/blob/develop/AUTHORS>`_
   to the django CMS!

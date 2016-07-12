@@ -10,8 +10,7 @@ from django.core.urlresolvers import NoReverseMatch
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.db import models
 from django.db.models import signals, Model, ManyToManyField
-from django.db.models.base import model_unpickle, ModelBase
-from django.db.models.query_utils import DeferredAttribute
+from django.db.models.base import ModelBase
 try:
     # Django >= 1.8, < 1.9
     from django.db.models.fields.related import (
@@ -201,25 +200,6 @@ class CMSPlugin(six.with_metaclass(PluginModelBase, MP_Node)):
         total = 1
         text_enabled = False
 
-    def __reduce__(self):
-        """
-        Provide pickling support. Normally, this just dispatches to Python's
-        standard handling. However, for models with deferred field loading, we
-        need to do things manually, as they're dynamically created classes and
-        only module-level classes can be pickled by the default path.
-        """
-        data = self.__dict__
-        # The obvious thing to do here is to invoke super().__reduce__()
-        # for the non-deferred case. Don't do that.
-        # On Python 2.4, there is something wierd with __reduce__,
-        # and as a result, the super call will cause an infinite recursion.
-        # See #10547 and #12121.
-        deferred_fields = [f for f in self._meta.fields
-                           if isinstance(self.__class__.__dict__.get(f.attname),
-                                         DeferredAttribute)]
-        model = self._meta.proxy_for_model
-        return (model_unpickle, (model, deferred_fields), data)
-
     def __str__(self):
         return force_text(self.pk)
 
@@ -291,7 +271,6 @@ class CMSPlugin(six.with_metaclass(PluginModelBase, MP_Node)):
             page = None
             if request:
                 page = request.current_page
-            plugin.cms_plugin_instance = instance
             context['allowed_child_classes'] = plugin.get_child_classes(placeholder_slot, page)
             context['allowed_parent_classes'] = plugin.get_parent_classes(placeholder_slot, page)
             if plugin.render_plugin:
@@ -301,20 +280,11 @@ class CMSPlugin(six.with_metaclass(PluginModelBase, MP_Node)):
             else:
                 template = None
             return render_plugin(context, instance, placeholder, template, processors, current_app)
-        else:
-            from cms.middleware.toolbar import toolbar_plugin_processor
-
-            if processors and toolbar_plugin_processor in processors:
-                if not placeholder:
-                    placeholder = self.placeholder
-                context = PluginContext(context, self, placeholder, current_app=current_app)
-                template = None
-                return render_plugin(context, self, placeholder, template, processors, current_app)
         return ""
 
     def get_media_path(self, filename):
         pages = self.placeholder.page_set.all()
-        if pages.count():
+        if pages.exists():
             return pages[0].get_media_path(filename)
         else:  # django 1.0.2 compatibility
             today = date.today()

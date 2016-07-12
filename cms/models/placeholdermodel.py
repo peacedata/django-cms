@@ -26,6 +26,7 @@ from cms.constants import (
     PUBLISHER_STATE_DIRTY,
 )
 from cms.utils import get_language_from_request
+from cms.utils import permissions
 from cms.utils.conf import get_cms_setting
 
 
@@ -110,52 +111,53 @@ class Placeholder(models.Model):
             model_name = model.__name__.lower()
             return admin_reverse('%s_%s_%s' % (app_label, model_name, key), args=args)
 
-    def _get_permission(self, request, key):
+    def _has_permission(self, user, key):
         """
-        Generic method to check the permissions for a request for a given key,
-        the key can be: 'add', 'change' or 'delete'. For each attached object
-        permission has to be granted either on attached model or on attached object.
-          * 'add' and 'change' permissions on placeholder need either on add or change
-            permission on attached object to be granted.
-          * 'delete' need either on add, change or delete
+        Returns True if user has permission
+        to change all objects attached to this placeholder.
         """
-        if getattr(request, 'user', None) and request.user.is_superuser:
+        if user.is_superuser:
             return True
-        perm_keys = {
-            'add': ('add', 'change',),
-            'change': ('add', 'change',),
-            'delete': ('add', 'change', 'delete'),
-        }
-        if key not in perm_keys:
-            raise Exception("%s is not a valid perm key. "
-                            "'Only 'add', 'change' and 'delete' are allowed" % key)
-        objects = [self.page] if self.page else self._get_attached_objects()
-        obj_perm = None
-        for obj in objects:
-            obj_perm = False
-            for key in perm_keys[key]:
-                if self._get_object_permission(obj, request, key):
-                    obj_perm = True
-                    break
-            if not obj_perm:
-                return False
-        return obj_perm
 
-    def _get_object_permission(self, obj, request, key):
-        if not getattr(request, 'user', None):
+        objects = [self.page] if self.page else self._get_attached_objects()
+
+        if not objects:
             return False
+
+        get_permission = self._get_object_permission
+        return all(get_permission(obj, user, 'change') for obj in objects)
+
+    def _get_object_permission(self, obj, user, key):
         opts = obj._meta
         perm_code = '%s.%s' % (opts.app_label, get_permission_codename(key, opts))
-        return request.user.has_perm(perm_code) or request.user.has_perm(perm_code, obj)
+        return user.has_perm(perm_code) or user.has_perm(perm_code, obj)
 
     def has_change_permission(self, request):
-        return self._get_permission(request, 'change')
+        return self._has_permission(request.user, 'change')
 
     def has_add_permission(self, request):
-        return self._get_permission(request, 'add')
+        return self._has_permission(request.user, 'add')
 
     def has_delete_permission(self, request):
-        return self._get_permission(request, 'delete')
+        return self._has_permission(request.user, 'delete')
+
+    def has_clear_permission(self, user, languages):
+        plugin_types = (
+            self
+            .cmsplugin_set
+            .filter(language__in=languages)
+            # exclude the clipboard plugin
+            .exclude(plugin_type='PlaceholderPlugin')
+            .values_list('plugin_type', flat=True)
+            .distinct()
+        )
+
+        has_permission = permissions.has_plugin_permission
+
+        for plugin_type in plugin_types.iterator():
+            if not has_permission(user, plugin_type, "delete"):
+                return False
+        return True
 
     def render(self, context, width, lang=None, editable=True, use_cache=True):
         '''
@@ -182,7 +184,7 @@ class Placeholder(models.Model):
         """
         Returns an ITERATOR of all non-cmsplugin reverse foreign key related fields.
         """
-        from cms.models import CMSPlugin
+        from cms.models import CMSPlugin, UserSettings
         if not hasattr(self, '_attached_fields_cache'):
             self._attached_fields_cache = []
             relations = self._get_related_objects()
@@ -190,11 +192,25 @@ class Placeholder(models.Model):
                 if issubclass(rel.model, CMSPlugin):
                     continue
                 from cms.admin.placeholderadmin import PlaceholderAdminMixin
-                parent = rel.related_model
-                if parent in admin.site._registry and isinstance(admin.site._registry[parent], PlaceholderAdminMixin):
+                related_model = rel.related_model
+
+                try:
+                    admin_class = admin.site._registry[related_model]
+                except KeyError:
+                    admin_class = None
+
+                # UserSettings is a special case
+                # Attached objects are used to check permissions
+                # and we filter out any attached object that does not
+                # inherit from PlaceholderAdminMixin
+                # Because UserSettings does not (and shouldn't) inherit
+                # from PlaceholderAdminMixin, we add a manual exception.
+                is_user_settings = related_model == UserSettings
+
+                if is_user_settings or isinstance(admin_class, PlaceholderAdminMixin):
                     field = getattr(self, rel.get_accessor_name())
                     try:
-                        if field.count():
+                        if field.exists():
                             self._attached_fields_cache.append(rel.field)
                     except:
                         pass
@@ -217,7 +233,7 @@ class Placeholder(models.Model):
                 if parent in admin.site._registry and isinstance(admin.site._registry[parent], PlaceholderAdminMixin):
                     field = getattr(self, rel.get_accessor_name())
                     try:
-                        if field.count():
+                        if field.exists():
                             self._attached_field_cache = rel.field
                             break
                     except:
@@ -233,7 +249,7 @@ class Placeholder(models.Model):
     def _get_attached_model(self):
         if hasattr(self, '_attached_model_cache'):
             return self._attached_model_cache
-        if self.page or self.page_set.all().count():
+        if self.page or self.page_set.exists():
             from cms.models import Page
             self._attached_model_cache = Page
             return Page

@@ -8,6 +8,7 @@
 
 var baseConf = require('./base.conf');
 var path = require('path');
+var fs = require('fs');
 var argv = require('minimist')(process.argv.slice(2));
 var webpack = require('webpack');
 var webpackConfig = require('../../../webpack.config.js')({
@@ -20,7 +21,10 @@ var webpackConfig = require('../../../webpack.config.js')({
 webpackConfig.module.preLoaders = [
     {
         test: /cms\/js\/modules\/(?!jquery)/,
-        loader: 'istanbul-instrumenter'
+        loader: 'istanbul-instrumenter',
+        query: {
+            noCompact: true
+        }
     }
 ];
 
@@ -38,6 +42,9 @@ webpackConfig.plugins = [
         files: JSON.stringify(files)
     })
 ];
+
+var CMS_VERSION = fs.readFileSync('cms/__init__.py', { encoding: 'utf-8' })
+    .match(/__version__ = '(.*?)'/)[1];
 
 module.exports = function (config) {
     var useSauceLabs = function () {
@@ -59,7 +66,7 @@ module.exports = function (config) {
 
         // list of files / patterns to load in the browser
         files: [
-            'cms/static/cms/css/cms.base.css',
+            'cms/static/cms/css/' + CMS_VERSION + '/cms.base.css',
 
             // fixtures
             'cms/tests/frontend/unit/fixtures/**/*.html',

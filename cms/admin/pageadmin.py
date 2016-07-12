@@ -36,9 +36,7 @@ from cms.admin.dialog.views import get_copy_dialog
 from cms.admin.forms import (
     PageForm, AdvancedSettingsForm, PagePermissionForm, PublicationDatesForm
 )
-from cms.admin.permissionadmin import (
-    PERMISSION_ADMIN_INLINES, PagePermissionInlineAdmin, ViewRestrictionInlineAdmin
-)
+from cms.admin.permissionadmin import PERMISSION_ADMIN_INLINES
 from cms.admin.placeholderadmin import PlaceholderAdminMixin
 from cms.admin.views import revert_plugins
 from cms.constants import (
@@ -263,9 +261,9 @@ class PageAdmin(PlaceholderAdminMixin, ModelAdmin):
         else:
             return form.fieldsets
 
-    def get_inline_classes(self, request, obj=None, **kwargs):
+    def get_inline_instances(self, request, obj=None):
         if obj and 'permission' in request.path_info:
-            return PERMISSION_ADMIN_INLINES
+            return super(PageAdmin, self).get_inline_instances(request, obj)
         return []
 
     def get_form_class(self, request, obj=None, **kwargs):
@@ -304,8 +302,6 @@ class PageAdmin(PlaceholderAdminMixin, ModelAdmin):
             del form.base_fields['menu_title']
             del form.base_fields['meta_description']
             del form.base_fields['page_title']
-
-        self.inlines = self.get_inline_classes(request, obj, **kwargs)
 
         if obj:
             if 'history' in request.path_info or 'recover' in request.path_info:
@@ -376,22 +372,6 @@ class PageAdmin(PlaceholderAdminMixin, ModelAdmin):
         if not page.has_change_permissions_permission(request):
             raise PermissionDenied("No permission for editing advanced settings")
         return self.change_view(request, object_id, extra_context={'show_permissions': True, 'title': _("Change Permissions")})
-
-    def get_inline_instances(self, request, obj=None):
-        inlines = super(PageAdmin, self).get_inline_instances(request, obj)
-        if get_cms_setting('PERMISSION') and obj:
-            filtered_inlines = []
-            for inline in inlines:
-                if (isinstance(inline, PagePermissionInlineAdmin)
-                and not isinstance(inline, ViewRestrictionInlineAdmin)):
-                    if "recover" in request.path or "history" in request.path:
-                        # do not display permissions in recover mode
-                        continue
-                    if not obj.has_change_permissions_permission(request):
-                        continue
-                filtered_inlines.append(inline)
-            inlines = filtered_inlines
-        return inlines
 
     def get_unihandecode_context(self, language):
         if language[:2] in get_cms_setting('UNIHANDECODE_DECODERS'):
@@ -540,21 +520,25 @@ class PageAdmin(PlaceholderAdminMixin, ModelAdmin):
         """
         Return true if the current user has permission to add a new page.
         """
-        if get_cms_setting('PERMISSION'):
+        can_add = super(PageAdmin, self).has_add_permission(request)
+
+        if can_add and get_cms_setting('PERMISSION'):
             return permissions.has_page_add_permission_from_request(request)
-        return super(PageAdmin, self).has_add_permission(request)
+        return can_add
 
     def has_change_permission(self, request, obj=None):
         """
         Return true if the current user has permission on the page.
         Return the string 'All' if the user has all rights.
         """
-        if get_cms_setting('PERMISSION'):
+        can_change = super(PageAdmin, self).has_change_permission(request, obj)
+
+        if can_change and get_cms_setting('PERMISSION'):
             if obj:
                 return obj.has_change_permission(request)
             else:
                 return permissions.has_page_change_permission(request)
-        return super(PageAdmin, self).has_change_permission(request, obj)
+        return can_change
 
     def has_delete_permission(self, request, obj=None):
         """
@@ -562,9 +546,39 @@ class PageAdmin(PlaceholderAdminMixin, ModelAdmin):
         Django model instance. If CMS_PERMISSION are in use also takes look to
         object permissions.
         """
-        if get_cms_setting('PERMISSION') and obj is not None:
-            return obj.has_delete_permission(request)
-        return super(PageAdmin, self).has_delete_permission(request, obj)
+        can_delete = super(PageAdmin, self).has_delete_permission(request, obj)
+
+        if not can_delete or not obj:
+            return False
+
+        if get_cms_setting('PERMISSION') and not obj.has_delete_permission(request):
+            return False
+
+        user = request.user
+        languages = obj.get_languages()
+        placeholders = obj.placeholders.filter(cmsplugin__language__in=languages)
+
+        for placeholder in placeholders.iterator():
+            if not placeholder.has_clear_permission(user, languages):
+                return False
+        return True
+
+    def has_delete_translation_permission(self, request, language, obj=None):
+        can_delete = permissions.has_auth_page_permission(request.user, action='delete')
+
+        if not can_delete or not obj:
+            return False
+
+        if get_cms_setting('PERMISSION') and not obj.has_delete_permission(request):
+            return False
+
+        user = request.user
+        placeholders = obj.placeholders.filter(cmsplugin__language=language)
+
+        for placeholder in placeholders.iterator():
+            if not placeholder.has_clear_permission(user, [language]):
+                return False
+        return True
 
     def has_recover_permission(self, request):
         """
@@ -616,6 +630,19 @@ class PageAdmin(PlaceholderAdminMixin, ModelAdmin):
             return False
         return True
 
+    def has_paste_plugin_permission(self, request, plugins, target_placeholder):
+        for plugin in plugins:
+            if not permissions.has_plugin_permission(request.user, plugin.plugin_type, "add"):
+                return False
+
+        page = target_placeholder.page
+
+        if page and not page.has_change_permission(request):
+            return False
+        if page and not page.publisher_is_draft:
+            return False
+        return True
+
     def has_move_plugin_permission(self, request, plugin, target_placeholder):
         if not permissions.has_plugin_permission(request.user, plugin.plugin_type, "change"):
             return False
@@ -644,7 +671,12 @@ class PageAdmin(PlaceholderAdminMixin, ModelAdmin):
                 return False
             if not page.has_change_permission(request):
                 return False
-        return True
+
+        language = request.GET.get('language', None)
+
+        if language is None:
+            language = get_language_from_request(request)
+        return placeholder.has_clear_permission(request.user, [language])
 
     @create_revision()
     def post_add_plugin(self, request, plugin):
@@ -1115,7 +1147,7 @@ class PageAdmin(PlaceholderAdminMixin, ModelAdmin):
                 return HttpResponseBadRequest(force_text(_("Language must be set to a supported language!")))
             for placeholder in placeholders:
                 plugins = list(
-                    placeholder.cmsplugin_set.filter(language=source_language).order_by('path'))
+                    placeholder.get_plugins(language=source_language).order_by('path'))
                 if not self.has_copy_plugin_permission(request, placeholder, placeholder, plugins):
                     return HttpResponseForbidden(force_text(_('You do not have permission to copy these plugins.')))
                 copy_plugins.copy_plugins_to(plugins, placeholder, target_language)
@@ -1377,7 +1409,7 @@ class PageAdmin(PlaceholderAdminMixin, ModelAdmin):
             # to determine whether a given object exists.
             obj = None
 
-        if not self.has_delete_permission(request, obj):
+        if not self.has_delete_translation_permission(request, language, obj):
             return HttpResponseForbidden(force_text(_("You do not have permission to change this page")))
 
         if obj is None:

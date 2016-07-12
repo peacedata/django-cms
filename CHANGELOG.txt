@@ -1,3 +1,15 @@
+=== 3.4.0 (unreleased) ===
+
+* Changed the way CMS plugins are rendered. The div with `cms-plugin` class is
+  no longer rendered around every CMS plugin, instead a combination of `template`
+  tags and JavaScript is used to add event handlers and plugin data directly to
+  the plugin markup. This fixes most of the rendering issues that were present
+  because of the extra markup.
+* Changed cache-busting implementation, it is now handled by a path change,
+  not by GET parameter.
+* Added a possibility to copy pages in the Page Tree by drag'n'drop.
+
+
 === 3.3.1 (unreleased) ===
 
 * Added a warning for users who are leaving the page or closing the plugin
@@ -17,6 +29,26 @@
   functionality on ``CMSPlugin`` subclasses for the parent link field.
 * Backported a performance fix from Django to avoid extra queries when
   plugins access their parent via the parent link field ``cmsplugin_ptr``.
+* Fixed typo in ``AdvancedSettingsForm`` error messages.
+* Fixed long standing bug that prevented apphook endspoints from being
+  CSRF exempt.
+* Changed default value for ``CMS_INTERNAL_IPS``.
+* Fixed an issue that prevented non superusers from copying all plugins
+  in a placeholder.
+* Fixed an issue where plugin permissions where not checked when clearing
+  a placeholder.
+* Fixed an issue where plugin permissions where not checked when deleting
+  a page or page translation.
+* Added support for tiered ``CMS_PLACEHOLDER_CONF``.
+* Fixed a useless placeholders edit permissions checking when not in edit
+  mode.
+* Fixed a bug where users with limited permissions could not interact with
+  page tree dropdowns.
+* Fixed a bug where Django Compressor could not be used on the sekizai ``js``
+  block.
+* Fixed an encoding error when running the ``publisher-publish`` command.
+* Fixed regression introduced in 3.3.0 when using the
+  ``render_plugin_toolbar_config`` template tag directly.
 
 
 === 3.3.0 (2016-05-26) ===
