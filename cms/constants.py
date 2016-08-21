@@ -16,6 +16,7 @@ PUBLISHER_STATE_DIRTY = 1
 PUBLISHER_STATE_PENDING = 4
 
 PAGE_TYPES_ID = "page_types"
+PAGE_TREE_POSITIONS = ('last-child', 'first-child', 'left', 'right')
 
 VISIBILITY_ALL = None
 VISIBILITY_USERS = 1
@@ -35,3 +36,14 @@ SLUG_REGEXP = '[0-9A-Za-z-_.//]+'
 EXPIRE_NOW = 0
 # HTTP Specification says max caching should only be up to one year.
 MAX_EXPIRATION_TTL = 365 * 24 * 3600
+
+PLUGIN_TOOLBAR_JS = "CMS._plugins.push(['cms-plugin-%(pk)s', %(config)s]);"
+
+PLACEHOLDER_TOOLBAR_JS = "CMS._plugins.push(['cms-placeholder-%(pk)s', %(config)s]);"
+
+# In the permissions system we use user levels to determine
+# the depth in which the user has permissions.
+# This constant represents a user that can see pages at all depths.
+ROOT_USER_LEVEL = -1
+
+GRANT_ALL_PERMISSIONS = 'All'

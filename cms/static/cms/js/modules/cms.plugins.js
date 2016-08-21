@@ -8,6 +8,7 @@ var Helpers = require('./cms.base').API.Helpers;
 var KEYS = require('./cms.base').KEYS;
 var Modal = require('./cms.modal');
 var nextUntil = require('./nextuntil');
+var fuzzyFilter = require('fuzzaldrin').filter;
 
 require('../polyfills/array.prototype.findindex');
 
@@ -225,26 +226,33 @@ var Plugin = new Class({
         this.ui.dragitem.on(this.doubleClick, dblClickHandler);
 
         if (!Plugin._isContainingMultiplePlugins(this.ui.container)) {
-            this.ui.container.on(this.doubleClick, dblClickHandler);
-            this.ui.container.on(this.pointerOverAndOut + ' ' + this.touchStart, function (e) {
-                // required for both, click and touch
-                // otherwise propagation won't work to the nested plugin
-                e.stopPropagation();
-                if (e.type === 'touchstart') {
-                    CMS.API.Tooltip._forceTouchOnce();
+            // have to delegate here because there might be plugins that
+            // have their content replaced by something dynamic. in case that tool
+            // copies the classes - double click to edit would still work
+            doc.on(this.doubleClick, '.cms-plugin-' + this.options.plugin_id, dblClickHandler);
+            doc.on(
+                this.pointerOverAndOut + ' ' + this.touchStart,
+                '.cms-plugin-' + this.options.plugin_id,
+                function (e) {
+                    // required for both, click and touch
+                    // otherwise propagation won't work to the nested plugin
+                    e.stopPropagation();
+                    if (e.type === 'touchstart') {
+                        CMS.API.Tooltip._forceTouchOnce();
+                    }
+                    var name = that.options.plugin_name;
+                    var id = that.options.plugin_id;
+
+                    var placeholderId = that._getId(that.ui.dragitem.closest('.cms-dragarea'));
+                    var placeholder = $('.cms-placeholder-' + placeholderId);
+
+                    if (placeholder.length && placeholder.data('cms')) {
+                        name = placeholder.data('cms').name + ': ' + name;
+                    }
+
+                    CMS.API.Tooltip.displayToggle(e.type === 'pointerover' || e.type === 'touchstart', e, name, id);
                 }
-                var name = that.options.plugin_name;
-                var id = that.options.plugin_id;
-
-                var placeholderId = that._getId(that.ui.dragitem.closest('.cms-dragarea'));
-                var placeholder = $('.cms-placeholder-' + placeholderId);
-
-                if (placeholder.length && placeholder.data('cms')) {
-                    name = placeholder.data('cms').name + ': ' + name;
-                }
-
-                CMS.API.Tooltip.displayToggle(e.type === 'pointerover' || e.type === 'touchstart', e, name, id);
-            });
+            );
         }
 
         // adds listener for all plugin updates
@@ -333,12 +341,14 @@ var Plugin = new Class({
 
         if (!clipboardDraggable.length) {
             pasteItem.addClass('cms-submenu-item-disabled');
+            pasteItem.find('a').attr('tabindex', '-1');
             pasteItem.find('.cms-submenu-item-paste-tooltip-empty').css('display', 'block');
             return false;
         }
 
         if (this.ui.draggable && this.ui.draggable.hasClass('cms-draggable-disabled')) {
             pasteItem.addClass('cms-submenu-item-disabled');
+            pasteItem.find('a').attr('tabindex', '-1');
             pasteItem.find('.cms-submenu-item-paste-tooltip-disabled').css('display', 'block');
             return false;
         }
@@ -357,12 +367,15 @@ var Plugin = new Class({
             if ((bounds.length && $.inArray(type, bounds) === -1) ||
                 (parent_bounds.length && $.inArray(currentPluginType, parent_bounds) === -1)) {
                 pasteItem.addClass('cms-submenu-item-disabled');
+                pasteItem.find('a').attr('tabindex', '-1');
                 pasteItem.find('.cms-submenu-item-paste-tooltip-restricted').css('display', 'block');
                 return false;
             }
         } else {
             return false;
         }
+
+        pasteItem.find('a').removeAttr('tabindex');
 
         return true;
     },
@@ -678,7 +691,7 @@ var Plugin = new Class({
                 CMS.API.Toolbar.hideLoader();
 
                 // TODO: show only if (response.status)
-                that._showSuccess(dragitem);
+                Plugin._highlightPluginStructure(dragitem);
                 Plugin._updateRegistry({
                     pluginId: options.plugin_id,
                     update: {
@@ -1402,17 +1415,20 @@ var Plugin = new Class({
             return false;
         }
 
-        // loop through items and figure out if we need to hide items
-        items.find('a, span').each(function (index, submenuItem) {
-            var item = $(submenuItem);
-            var text = item.text().toLowerCase();
-            var search = query.toLowerCase();
+        var itemsToFilter = items.toArray().map(function (el) {
+            var element = $(el);
 
-            if (text.indexOf(search) >= 0) {
-                item.parent().show();
-            } else {
-                item.parent().hide();
-            }
+            return {
+                value: element.text(),
+                element: element
+            };
+        });
+
+        var filteredItems = fuzzyFilter(itemsToFilter, query, { key: 'value' });
+
+        items.hide();
+        filteredItems.forEach(function (item) {
+            item.element.show();
         });
 
         // check if a title is matching
@@ -1622,28 +1638,6 @@ var Plugin = new Class({
      */
     _getIds: function (els) {
         return CMS.API.StructureBoard.getIds(els);
-    },
-
-    /**
-     * Shows and immediately fades out a success notification (when
-     * plugin was successfully moved.
-     *
-     * @method _showSuccess
-     * @private
-     * @param {jQuery} el draggable element
-     */
-    _showSuccess: function (el) {
-        var tpl = $('<div class="cms-dragitem-success"></div>');
-        var SUCCESS_TIMEOUT = 1000;
-
-        el.addClass('cms-draggable-success').append(tpl);
-        // start animation
-        tpl.fadeOut(SUCCESS_TIMEOUT, function () {
-            $(this).remove();
-            el.removeClass('cms-draggable-success');
-        });
-        // make sure structurboard gets updated after success
-        this.ui.window.trigger('resize.sideframe');
     },
 
     /**
@@ -1862,6 +1856,83 @@ Plugin._isContainingMultiplePlugins = function _isContainingMultiplePlugins(node
 
     return false;
 };
+
+/**
+ * Shows and immediately fades out a success notification (when
+ * plugin was successfully moved.
+ *
+ * @method _highlightPluginStructure
+ * @private
+ * @static
+ * @param {jQuery} el draggable element
+ */
+Plugin._highlightPluginStructure = function _highlightPluginStructure(el) {
+    var tpl = $('<div class="cms-dragitem-success"></div>');
+    var SUCCESS_TIMEOUT = 2000;
+
+    el.addClass('cms-draggable-success').append(tpl);
+    // start animation
+    tpl.fadeOut(SUCCESS_TIMEOUT, function () {
+        $(this).remove();
+        el.removeClass('cms-draggable-success');
+    });
+    // make sure structurboard gets updated after success
+    $(Helpers._getWindow()).trigger('resize.sideframe');
+};
+
+/**
+ * Highlights plugin in content mode
+ *
+ * @method _highlightPluginContent
+ * @private
+ * @static
+ * @param {String|Number} pluginId
+ */
+Plugin._highlightPluginContent = function _highlightPluginContent(pluginId) {
+    var coordinates = {};
+    var positions = [];
+    var win = $(Helpers._getWindow());
+    var SUCCESS_TIMEOUT = 2000;
+    var OVERLAY_POSITION_TO_WINDOW_HEIGHT_RATIO = 0.20;
+
+    $('.cms-plugin-' + pluginId).each(function () {
+        var el = $(this);
+        var offset = el.offset();
+
+        positions.push(
+            {
+                x1: offset.left,
+                x2: offset.left + el.outerWidth(),
+                y1: offset.top,
+                y2: offset.top + el.outerHeight()
+            }
+        );
+    });
+
+    coordinates.left = Math.min.apply(null, positions.map(function (pos) {
+        return pos.x1;
+    }));
+    coordinates.top = Math.min.apply(null, positions.map(function (pos) {
+        return pos.y1;
+    }));
+    coordinates.width = Math.max.apply(null, positions.map(function (pos) {
+        return pos.x2;
+    })) - coordinates.left;
+    coordinates.height = Math.max.apply(null, positions.map(function (pos) {
+        return pos.y2;
+    })) - coordinates.top;
+
+    win.scrollTop(coordinates.top - win.height() * OVERLAY_POSITION_TO_WINDOW_HEIGHT_RATIO);
+
+    $('<div class="cms-plugin-overlay cms-dragitem-success"></div>').css(coordinates).css({
+        zIndex: 9999
+    }).appendTo($('body'));
+
+    $('.cms-plugin-overlay').fadeOut(SUCCESS_TIMEOUT, function () {
+        $(this).remove();
+    });
+};
+
 
 Plugin.aliasPluginDuplicatesMap = {};
 

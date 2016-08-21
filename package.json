@@ -4,7 +4,7 @@
   "devDependencies": {
     "autoprefixer": "^6.3.6",
     "browserslist-saucelabs": "^0.2.3",
-    "djangocms-casper-helpers": "^1.1.2",
+    "djangocms-casper-helpers": "^1.2.0",
     "exports-loader": "^0.6.3",
     "gulp": "3.9.0",
     "gulp-clean-css": "^2.0.6",
@@ -33,6 +33,11 @@
     "karma-webpack": "^1.7.0",
     "minimist": "1.1.1",
     "phantomjs-prebuilt": "^2.1.7",
+    "raw-loader": "^0.5.1",
     "webpack": "^1.13.1"
+  },
+  "dependencies": {
+    "fuzzaldrin": "^2.1.0",
+    "keyboardjs": "^2.3.1"
   }
 }

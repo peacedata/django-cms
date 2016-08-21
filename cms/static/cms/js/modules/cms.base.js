@@ -68,6 +68,14 @@ var _ns = function nameSpaceEvent(events) {
 CMS.API.Helpers = {
 
     /**
+     * See {@link reloadBrowser}
+     *
+     * @property {Boolean} isRloading
+     * @private
+     */
+    _isReloading: false,
+
+    /**
      * Redirects to a specific url or reloads browser.
      *
      * @method reloadBrowser
@@ -87,6 +95,8 @@ CMS.API.Helpers = {
         // is there a parent window?
         var win = this._getWindow();
         var parent = win.parent ? win.parent : win;
+
+        that._isReloading = true;
 
         // if there is an ajax reload, prioritize
         if (ajax) {
@@ -135,6 +145,19 @@ CMS.API.Helpers = {
                 parent.location.reload();
             }
         }, timeout || 0);
+    },
+
+    /**
+     * Overridable callback that is being called in close_frame.html when plugin is saved
+     *
+     * @function onPluginSave
+     * @public
+     */
+    onPluginSave: function () {
+        // istanbul ignore else
+        if (!this._isReloading) {
+            this.reloadBrowser(null, 300); // eslint-disable-line
+        }
     },
 
     /**

@@ -7,8 +7,12 @@ var Class = require('classjs');
 var Helpers = require('./cms.base').API.Helpers;
 var KEYS = require('./cms.base').KEYS;
 var ChangeTracker = require('./cms.changetracker');
+var keyboard = require('keyboardjs');
+var previousKeyboardContext;
+var previouslyFocusedElement;
 
 require('./jquery.transition');
+require('./jquery.trap');
 
 /**
  * The modal is triggered via API calls from the backend either
@@ -49,6 +53,7 @@ var Modal = new Class({
         this.pointerMove = 'pointermove.cms.modal';
         this.doubleClick = 'dblclick.cms.modal';
         this.touchEnd = 'touchend.cms.modal';
+        this.keyUp = 'keyup.cms.modal';
         this.maximized = false;
         this.minimized = false;
         this.triggerMaximized = false;
@@ -125,16 +130,20 @@ var Modal = new Class({
 
         // modal behaviours
         this.ui.minimizeButton
-            .off(this.click + ' ' + this.touchEnd)
-            .on(this.click + ' ' + this.touchEnd, function (e) {
-                e.preventDefault();
-                that.minimize();
+            .off(this.click + ' ' + this.touchEnd + ' ' + this.keyUp)
+            .on(this.click + ' ' + this.touchEnd + ' ' + this.keyUp, function (e) {
+                if (e.type !== 'keyup' || e.type === 'keyup' && e.keyCode === KEYS.ENTER) {
+                    e.preventDefault();
+                    that.minimize();
+                }
             });
         this.ui.maximizeButton
-            .off(this.click + ' ' + this.touchEnd)
-            .on(this.click + ' ' + this.touchEnd, function (e) {
-                e.preventDefault();
-                that.maximize();
+            .off(this.click + ' ' + this.touchEnd + ' ' + this.keyUp)
+            .on(this.click + ' ' + this.touchEnd + ' ' + this.keyUp, function (e) {
+                if (e.type !== 'keyup' || e.type === 'keyup' && e.keyCode === KEYS.ENTER) {
+                    e.preventDefault();
+                    that.maximize();
+                }
             });
 
         this.ui.title.off(this.pointerDown).on(this.pointerDown, function (e) {
@@ -151,11 +160,14 @@ var Modal = new Class({
         });
 
         this.ui.closeAndCancel
-            .off(this.click + ' ' + this.touchEnd)
-            .on(this.click + ' ' + this.touchEnd, function (e) {
-                e.preventDefault();
-                that._cancelHandler();
+            .off(this.click + ' ' + this.touchEnd + ' ' + this.keyUp)
+            .on(this.click + ' ' + this.touchEnd + ' ' + this.keyUp, function (e) {
+                if (e.type !== 'keyup' || e.type === 'keyup' && e.keyCode === KEYS.ENTER) {
+                    e.preventDefault();
+                    that._cancelHandler();
+                }
             });
+
 
         // elements within the window
         this.ui.breadcrumb.off(this.click, 'a').on(this.click, 'a', function (e) {
@@ -241,10 +253,20 @@ var Modal = new Class({
 
         this.trigger('cms.modal.loaded');
 
+        var currentContext = keyboard.getContext();
+
+        if (currentContext !== 'modal') {
+            previousKeyboardContext = keyboard.getContext();
+            previouslyFocusedElement = $(document.activeElement);
+        }
+
         // display modal
         this._show($.extend({
             duration: this.options.modalDuration
         }, position));
+
+        keyboard.setContext('modal');
+        this.ui.modal.trap();
 
         return this;
     },
@@ -373,6 +395,7 @@ var Modal = new Class({
         // add esc close event
         this.ui.body.off('keydown.cms.close').on('keydown.cms.close', function (e) {
             if (e.keyCode === KEYS.ESC && that.options.closeOnEsc) {
+                e.stopPropagation();
                 if (that._confirmDirtyEscCancel()) {
                     that._cancelHandler();
                 }
@@ -400,12 +423,18 @@ var Modal = new Class({
 
         // handle refresh option
         if (this.options.onClose) {
-            this.reloadBrowser(this.options.onClose, false, true);
+            Helpers.reloadBrowser(this.options.onClose, false, true);
         }
 
         this._hide({
             duration: this.options.modalDuration / 2
         });
+
+        this.ui.modal.untrap();
+        keyboard.setContext(previousKeyboardContext);
+        try {
+            previouslyFocusedElement.focus();
+        } catch (e) {}
     },
 
     /**
@@ -802,7 +831,20 @@ var Modal = new Class({
                         // as we are inside an iframe and magic is happening
                         item[0].click();
                     } else {
-                        frm.submit();
+                        // have to dispatch native submit event so all the submit handlers
+                        // can be fired, see #5590
+                        var evt = document.createEvent('HTMLEvents');
+
+                        evt.initEvent('submit', false, true);
+                        if (frm[0].dispatchEvent(evt)) {
+                            // triggering submit event in webkit based browsers won't
+                            // actually submit the form, while in Gecko-based ones it
+                            // will and calling frm.submit() would throw NS_ERROR_UNEXPECTED
+                            try {
+                                frm[0].submit();
+                            } catch (err) {
+                            }
+                        }
                     }
                 }
 
@@ -860,7 +902,7 @@ var Modal = new Class({
 
         // now refresh the content
         var holder = this.ui.frame;
-        var iframe = $('<iframe src="' + opts.url + '" class="" frameborder="0" />');
+        var iframe = $('<iframe tabindex="0" src="' + opts.url + '" class="" frameborder="0" />');
 
         // set correct title
         var titlePrefix = this.ui.titlePrefix;
@@ -897,6 +939,11 @@ var Modal = new Class({
                 that.close();
                 return;
             }
+
+            body.attr('tabindex', '0');
+            iframe.on('focus', function () {
+                body.focus();
+            });
 
             Modal._setupCtrlEnterSave(document);
             // istanbul ignore else
@@ -952,7 +999,7 @@ var Modal = new Class({
             if (messages.length && that.enforceReload) {
                 that.ui.modalBody.addClass('cms-loader');
                 CMS.API.Toolbar.showLoader();
-                that.reloadBrowser();
+                Helpers.reloadBrowser();
             }
             if (messages.length && that.enforceClose) {
                 that.close();
@@ -978,7 +1025,7 @@ var Modal = new Class({
             if (that.saved && saveSuccess && !contents.find('.delete-confirmation').length) {
                 that.ui.modalBody.addClass('cms-loader');
                 CMS.API.Toolbar.showLoader();
-                that.reloadBrowser(
+                Helpers.reloadBrowser(
                     that.options.onClose ? that.options.onClose : window.location.href,
                     false,
                     true
@@ -1011,6 +1058,7 @@ var Modal = new Class({
                 // attach close event
                 body.on('keydown.cms', function (e) {
                     if (e.keyCode === KEYS.ESC && that.options.closeOnEsc) {
+                        e.stopPropagation();
                         if (that._confirmDirtyEscCancel()) {
                             that._cancelHandler();
                         }

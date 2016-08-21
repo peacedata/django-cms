@@ -4,7 +4,7 @@ from cms.cms_plugins import AliasPlugin
 from cms.models import Placeholder, AliasPluginModel
 from cms.test_utils.testcases import CMSTestCase
 from cms.utils.urlutils import admin_reverse
-from django.template import Template, Context
+from django.template import Template
 
 
 class AliasTestCase(CMSTestCase):
@@ -28,10 +28,30 @@ class AliasTestCase(CMSTestCase):
         self.assertEqual(response.status_code, 403)
         instance = AliasPluginModel.objects.all()[0]
         admin = AliasPlugin()
-        request = self.get_request("/")
-        context = Context({'request': request})
+        context = self.get_context()
         admin.render(context, instance, ph_en)
         self.assertEqual(context['content'], "I'm the first")
+
+    def test_alias_recursion(self):
+        page_en = api.create_page(
+            "Alias plugin",
+            "col_two.html",
+            "en",
+            slug="page1",
+            published=True,
+            in_navigation=True,
+        )
+        ph_1_en = page_en.placeholders.get(slot="col_left")
+        ph_2_en = page_en.placeholders.get(slot="col_sidebar")
+
+        api.add_plugin(ph_1_en, 'StylePlugin', 'en', tag_type='div', class_name='info')
+        api.add_plugin(ph_1_en, 'AliasPlugin', 'en', alias_placeholder=ph_2_en)
+        api.add_plugin(ph_2_en, 'AliasPlugin', 'en', alias_placeholder=ph_1_en)
+
+        with self.login_user_context(self.get_superuser()):
+            response = self.client.get(page_en.get_absolute_url() + '?edit')
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, '<div class="info">', html=True)
 
     def test_move_and_delete_plugin_alias(self):
         '''
@@ -84,14 +104,8 @@ class AliasTestCase(CMSTestCase):
         page_en = api.create_page("PluginOrderPage", "col_two.html", "en",
                                   slug="page1", published=True, in_navigation=True)
         ph_en = page_en.placeholders.get(slot="col_left")
-        class FakeRequest(object):
-            current_page = page_en
-            user = self.get_superuser()
-            GET = {'language': 'en'}
-            META = {"CSRF_COOKIE_USED": True}
-        request = FakeRequest()
-        template = Template('{% load cms_tags %}{% render_extra_menu_items placeholder %}')
-        context = Context({'request': request})
+        context = self.get_context(page=page_en)
         context['placeholder'] = ph_en
+        template = Template('{% load cms_tags %}{% render_extra_menu_items placeholder %}')
         output = template.render(context)
         self.assertTrue(len(output), 200)

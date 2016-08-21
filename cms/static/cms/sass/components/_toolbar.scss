@@ -23,7 +23,6 @@
         left: 0;
         top: 0;
         z-index: z(toolbar, left);
-        padding-left: $toolbar-left-space;
     }
     .cms-toolbar-right {
         position: absolute;
@@ -131,7 +130,6 @@
             border-top: none;
             border-radius: 0 0 $toolbar-dropdown-border-radius $toolbar-dropdown-border-radius;
             background-color: $toolbar-dropdown-bgcolor;
-            background: rgba($toolbar-dropdown-bgcolor, 0.97);
             box-shadow: $toolbar-dropdown-shadow;
         }
         ul li {
@@ -369,7 +367,7 @@
 //###########################################################
 // #TOOLBAR/elements/logo#
 .cms-toolbar-item-logo {
-    margin-right: $toolbar-left-space;
+    margin-right: 0 !important;
 
     a {
         @extend .cms-icon;
@@ -378,6 +376,8 @@
         line-height: $toolbar-height;
         height: $toolbar-height;
         transition: color $speed-base;
+        padding-left: $toolbar-left-space;
+        padding-right: $toolbar-left-space;
 
         span {
             display: none;
